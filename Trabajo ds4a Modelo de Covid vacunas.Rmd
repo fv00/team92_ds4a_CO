@@ -1,0 +1,100 @@
+---
+title: "Modelo DS4A"
+author: Santiago Franco, Brandom Mosquera, Vanessa González, Nicolas Escudero,  Carlos
+  Yanes
+date: "21/8/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+## Serie de Tiempo Modelo Bayesiano Estructural
+
+Los primeros casos de Sars-Cov2 se dieron en China en la ciudad de Wuham para la fecha del 31 de diciembre de 2019 véase los informes de la OMS. La enfermedad de la Covid-19 identificada por el virus de SARS-CoV-2 generó un hito histórico sin precedentes en el cambio social y en impacto económico de muchas economías en el mundo sobre todo en los sectores de salud, comercio, industria, agro, entre otros dejando una cifra de mas o menos 4.1 millones de desempleados (Riaño, 2021). Es por esto, que el objetivo de este ejercicio académico es mirar que tanto ha sido afectada la tasa de mortalidad, por el Plan Nacional de vacunación del Gobierno Colombiano.
+
+Frente a esto, parte la idea de hacer uso de la metodología propuesta por brodersen, (2015) quienes hacen uso de el establecimiento de un contra-factual o control sintético de variables simplemente porque se produce un evento, como por ejemplo el desarrollo de un nuevo producto, una campaña de mercadeo para impulsar la venta de algo novedoso, etc. Haciendo uso de la técnica inferencial de los modelos de espacio-estado, que en contraste del modelo tradicional de diferencias en diferencias y donde los experimentos son aleatorios, se permite hacer inferencia de forma mas flexible dentro de las variables de interés incluyendo el tratamiento de formas funcionales y tendenciales de las series de tiempo. Como ocurre con todos los enfoques de la inferencia causal sobre datos no experimentales, las conclusiones válidas requieren de fuertes supuestos. 
+
+El paquete "CausalImpact"", en particular, supone que las series temporales objetivo pueden explicarse en términos de otro conjunto de series temporales de control que no se vieron afectadas por la intervención. Además, se supone que la relación entre las series tratadas y las series de control son estables durante el período posterior a la intervención.
+
+```{r libraries, echo=FALSE}
+library(readxl)
+library(readr)
+library(skimr)
+library(lubridate)
+library(CausalImpact)
+```
+
+## Datos
+
+Se hace uso de la base de datos provista por el Ministerio Nacional de salud
+
+```{r data, echo=FALSE}
+contrafactual_data <- read_csv("contrafactual_data.csv")
+base=contrafactual_data
+
+
+mortality<-ts(base$Mortalidad,freq=365.25/7, start=decimal_date(ymd("2020-03-01")))
+vaccines<-ts(base$`Total vacunas`,freq=365.25/7, start=decimal_date(ymd("2020-03-01")))
+vaccines.shot<-ts(base$`Cantidad vacunas`,freq=365.25/7, start=decimal_date(ymd("2020-03-01")))
+cont.bu<-ts(base$Fallecidos,freq=365.25/7, start=decimal_date(ymd("2020-03-01")))
+```
+
+## Graficos
+
+La dinámica de las series ha sido
+
+```{r graph1}
+par(mfrow = c(1, 2))
+plot(mortality, main="Serie Mortalidad", ylab="Cantidad", xlab="Semana")
+plot(vaccines,main="Serie Vacunas", ylab="Cantidad", xlab="Semana")
+
+par(mfrow = c(1, 1))
+```
+
+## Asignación del modelo
+
+```{r model1}
+time.points <- seq.Date(as.Date("2020-03-01"), by = 7, length.out = 63)
+mor=as.double(mortality)
+vac=as.double(vaccines)
+
+# Base para el modelo
+datos <- zoo(cbind(mor, vac), time.points)
+
+# Dummies de fechas
+pre.period <- as.Date(c("2020-03-01", "2021-02-14"))
+post.period <- as.Date(c("2021-02-21", "2021-05-09"))
+
+#Modelo
+impacto <- CausalImpact(datos, pre.period, post.period)
+plot(impacto)
+```
+
+## Coeficientes del modelo
+
+```{r coef}
+plot(impacto$model$bsts.model, "coefficients")
+```
+
+## Parámetros
+
+```{r resume}
+summary(impacto)
+```
+
+Durante el **periodo posterior** a la intervención, la variable de respuesta tuvo un valor medio de aproximadamente 0,032. En ausencia de la intervención, habríamos esperado una respuesta media de 0,054. El intervalo del 95% de esta predicción contrafactual es [-0,52, 0,68]. Si se resta esta predicción de la respuesta observada, se obtiene una estimación del efecto causal que tuvo la intervención sobre la variable de respuesta. Este efecto es de -0,023 con un intervalo del 95% de [-0,65, 0,55]. A continuación se analiza la importancia de este efecto.
+
+Sumando los puntos de datos individuales durante el periodo posterior a la intervención (que sólo a veces puede interpretarse de forma significativa), la variable de respuesta tenía un valor global de 0,38. Si la intervención no hubiera tenido lugar, habríamos esperado una suma de 0,65. El intervalo del 95% de esta predicción es [-6,24, 8,19].
+
+Los resultados anteriores se dan en términos de números absolutos. En términos relativos, la variable de respuesta mostró una disminución del -41%. El intervalo del 95% de este porcentaje es [-1195%, +1014%].
+ 
+Esto significa que, aunque parezca que la intervención ha ejercido un efecto negativo sobre la variable de respuesta cuando se considera el periodo de intervención en su conjunto, este efecto no es estadísticamente significativo, por lo que no puede interpretarse de forma significativa. El efecto aparente podría ser el resultado de fluctuaciones aleatorias que no están relacionadas con la intervención. Este suele ser el caso cuando el periodo de intervención es muy largo e incluye gran parte del tiempo en el que el efecto ya ha desaparecido. También puede ocurrir cuando el periodo de intervención es demasiado corto para distinguir la señal del ruido. Por último, no encontrar un efecto significativo puede ocurrir cuando no hay suficientes variables de control o cuando estas variables no se correlacionan bien con la variable de respuesta durante el periodo de aprendizaje.
+
+La probabilidad de obtener este efecto por azar es de p = 0,481. Esto significa que el efecto puede ser espurio y generalmente no se consideraría estadísticamente significativo.
+
